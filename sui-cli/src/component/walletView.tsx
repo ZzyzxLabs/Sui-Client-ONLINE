@@ -1,228 +1,378 @@
 "use client";
-import React, { useState } from 'react';
-import { useSuiClientQueries, useSuiClientQuery } from '@mysten/dapp-kit';
-import { LoadingSpinnerIcon, CheckCircleIcon, ExclamationTriangleIcon, InformationCircleIcon } from './icons/StatusIcons';
+import { useCurrentAccount, useSuiClientQuery } from "@mysten/dapp-kit";
+import { useEffect, useState } from "react";
 
-// Define the Coin interface based on SUI's coin balance structure
-interface Coin {
-  coinType: string;
-  coinObjectCount: number;
-  totalBalance: string;
-  lockedBalance: object;
+// Add custom CSS animations
+const animationStyles = `
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+  }
+  
+  @keyframes slideDown {
+    from { transform: translateY(-10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  
+  .animate-slide-down {
+    animation: slideDown 0.3s ease-out;
+  }
+`;
+
+// Inject styles
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = animationStyles;
+  document.head.appendChild(style);
 }
 
-const WalletDashboard: React.FC = () => {
-  const [walletAddress, setWalletAddress] = useState<string>(process.env.PLASMO_PUBLIC_ADDRESS || "");
-  const [shouldQuery, setShouldQuery] = useState<boolean>(false);
+// Component to display object fields in a collapsible format
+function ObjectFieldsDisplay({ fields }: { fields: any }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // Validate hex input
-  const validateHex = (input: string) => {
-    return /^(0x)?[0-9a-fA-F]*$/.test(input);
-  };
-
-  const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    if (validateHex(value) || value === "") {
-      setWalletAddress(value);
-      setShouldQuery(false); // Reset query state when address changes
-    }
-  };
-
-  const handleQueryWallet = () => {
-    if (walletAddress.trim()) {
-      setShouldQuery(true);
-      console.log(`Querying wallet: ${walletAddress}`);
-    }
-  };
-
-  const { data: coinsData, isLoading: coinIsLoading, error: coinError, isError: coinIsError } = useSuiClientQuery(
-    'getAllBalances',
-    {
-      owner: walletAddress
-    },
-    {
-      refetchInterval: 5000, // Refetch every 5 seconds
-      enabled: shouldQuery && walletAddress.length > 0,
-    }
-  );
-
-  if (!coinIsLoading && coinsData) console.log("Coins Data:", coinsData);
-  
-  const allCoins = coinsData as Coin[] | undefined;
-  const coins = allCoins?.filter(coin => coin.totalBalance !== "0");
-
-  const { data: coinDetailData, isSuccess: coinDetailIsSuccess, isPending: coinDetailIsPending, isError: coinDetailIsError }
-    = useSuiClientQueries({
-      queries: (coins ?? []).map((coin) => ({
-        method: 'getCoinMetadata',
-        params: { coinType: coin.coinType }
-      })),
-      combine: (result) => {
-        return {
-          data: result.map((res) => res.data),
-          isSuccess: result.every((res) => res.isSuccess),
-          isPending: result.some((res) => res.isPending),
-          isError: result.some((res) => res.isError),
-        };
-      }
-    });
-
-  if (!coinDetailIsPending && coinDetailData) console.log("Coin Detail Data:", coinDetailData);
-
-  // Sort coins and coinDetailData by contract hash (coinType/id) ascending
-  let sortedCoins: Coin[] = [];
-  let sortedCoinDetailData: any[] = [];
-  if (coins && coinDetailData) {
-    // Pair coins with their detail and sort by coinType/id
-    const paired = coins.map((coin, idx) => ({
-      coin,
-      detail: coinDetailData[idx],
-      sortKey: coin.coinType,
-    })).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-    sortedCoins = paired.map(p => p.coin);
-    sortedCoinDetailData = paired.map(p => p.detail);
-  } else {
-    sortedCoins = coins ?? [];
-    sortedCoinDetailData = coinDetailData ?? [];
+  if (!fields || typeof fields !== 'object') {
+    return <span className="text-gray-400">No fields</span>;
   }
 
-  const newcoins = sortedCoins;
-  const newcoinDetailData = sortedCoinDetailData;
+  const fieldEntries = Object.entries(fields);
+
+  const copyToClipboard = async (text: string, fieldKey: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(fieldKey);
+      setTimeout(() => setCopiedField(null), 300);
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+    }
+  };
 
   return (
-    <div className="w-fit min-w-96">
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-12 backdrop-blur-sm bg-opacity-95">
-        <div className="border-b border-gray-200 pb-3 mb-6">
-          <h2 className="text-xl font-semibold text-gray-800">
-            Wallet Dashboard
-          </h2>
-        </div>
-
-        <div className="space-y-5">
-          {/* Wallet Address Input */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Wallet Address
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Enter wallet address (0x...)"
-                value={walletAddress}
-                onChange={handleAddressChange}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-              />
-              <button
-                type="button"
-                onClick={handleQueryWallet}
-                disabled={!walletAddress.trim()}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                Query
-              </button>
-            </div>
-          </div>
-
-          {/* Status Indicators */}
-          {shouldQuery && (
-            <div className="flex items-center gap-2 text-sm">
-              {coinIsLoading ? (
-                <>
-                  <LoadingSpinnerIcon className="w-4 h-4 text-blue-500" />
-                  <span className="text-blue-600">Loading wallet data...</span>
-                </>
-              ) : coinIsError ? (
-                <>
-                  <ExclamationTriangleIcon className="w-4 h-4 text-red-500" />
-                  <span className="text-red-600">Error loading wallet data</span>
-                </>
-              ) : coinsData ? (
-                <>
-                  <CheckCircleIcon className="w-4 h-4 text-green-500" />
-                  <span className="text-green-600">Wallet data loaded successfully</span>
-                </>
-              ) : null}
-            </div>
-          )}
-
-          {/* Coins Section */}
-          {shouldQuery && coinsData && (
-            <>
-              <div className="relative">
-                <div className="border-t border-gray-200 my-6"></div>
-                <span className="absolute top-[-12px] left-0 bg-white px-3 text-sm font-medium text-gray-500">
-                  Coin Balances ({newcoins?.length || 0} tokens)
-                </span>
-              </div>
-
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {coinDetailIsPending ? (
-                  <div className="flex items-center justify-center py-8">
-                    <LoadingSpinnerIcon className="w-6 h-6 text-blue-500 mr-2" />
-                    <span className="text-gray-600">Loading coin details...</span>
+    <div>
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="text-blue-500 hover:text-blue-700 text-sm flex items-center transition-colors duration-200"
+      >
+        <span className={`mr-1 transition-transform duration-200 ${isExpanded ? 'rotate-90' : 'rotate-0'}`}>
+          ▶
+        </span>
+        {fieldEntries.length} fields
+      </button>
+      <div 
+        className={`overflow-hidden transition-all duration-300 ease-in-out ${
+          isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
+        }`}
+      >
+        <div className="mt-2 space-y-1 border-l-2 border-gray-200 pl-3">
+          {fieldEntries.map(([key, value]) => {
+            const valueStr = typeof value === 'object' && value !== null ? 
+              JSON.stringify(value) : 
+              String(value);
+            
+            return (
+              <div key={key} className="text-xs group">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 mr-2">
+                    <span className="font-medium text-gray-700">{key}:</span>{' '}
+                    <span 
+                      className={`cursor-pointer break-all transition-colors duration-300 ${
+                        copiedField === key ? 'text-green-400' : 'text-gray-600'
+                      }`}
+                      onClick={() => copyToClipboard(valueStr, key)}
+                      title="Click to copy"
+                    >
+                      {valueStr}
+                    </span>
                   </div>
-                ) : newcoins && newcoins.length > 0 ? (
-                  newcoins.map((coin, index) => {
-                    const coinDetail = newcoinDetailData[index];
-                    const balance = Number(coin.totalBalance) / Math.pow(10, Number(coinDetail?.decimals || 0));
-                    
-                    return (
-                      <div key={coin.coinType} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:shadow-sm transition-shadow">
-                        <div className="flex items-center">
-                          {coinDetail?.iconUrl ? (
-                            <img 
-                              src={coinDetail.iconUrl} 
-                              alt={`${coinDetail.symbol} icon`} 
-                              className="w-10 h-10 rounded-full mr-4" 
-                            />
-                          ) : (
-                            <div className="w-10 h-10 bg-gray-100 rounded-full mr-4 flex items-center justify-center">
-                              <InformationCircleIcon className="w-6 h-6 text-gray-400" />
-                            </div>
-                          )}
-                          <div>
-                            <div className="text-lg font-medium text-gray-800">
-                              {coinDetail?.symbol || 'Unknown'}
-                            </div>
-                            <div className="text-xs text-gray-500 truncate max-w-48">
-                              {coin.coinType}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-lg font-semibold text-gray-800">
-                            {balance.toFixed(6)}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {coinDetail?.symbol || 'tokens'}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <InformationCircleIcon className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                    <p>No coins found in this wallet</p>
-                  </div>
-                )}
+                </div>
               </div>
-
-              {/* External Wallet Button */}
-              <div className="pt-4 border-t border-gray-200">
-                <button
-                  onClick={() => window.open('https://seawallet.ai', '_blank')}
-                  className="w-full py-3 px-4 bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-medium rounded-md hover:from-cyan-600 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all shadow-sm"
-                >
-                  Open Sea Vault
-                </button>
-              </div>
-            </>
-          )}
+            );
+          })}
         </div>
       </div>
     </div>
   );
-};
+}
 
-export default WalletDashboard;
+// Component to display a single object in grid format
+function ObjectCard({ objectData }: { objectData: any }) {
+  const [copiedItem, setCopiedItem] = useState<string | null>(null);
+  const data = objectData.data;
+
+  const copyToClipboard = async (text: string, itemType: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedItem(itemType);
+      setTimeout(() => setCopiedItem(null), 300);
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+    }
+  };
+
+  const CopyableText = ({ text, itemType, className = "" }: {
+    text: string;
+    itemType: string;
+    className?: string;
+  }) => {
+    return (
+      <span 
+        className={`cursor-pointer break-all transition-colors duration-300 ${
+          copiedItem === itemType ? 'text-green-400' : 'text-gray-600'
+        } ${className}`}
+        onClick={() => copyToClipboard(text, itemType)}
+        title="Click to copy"
+      >
+        {text}
+      </span>
+    );
+  };
+  
+  return (
+    <div className="border border-gray-300 rounded-lg p-4 bg-white hover:shadow-lg transform hover:scale-[1.02] transition-all duration-300 ease-in-out">
+      <div className="grid grid-cols-3 gap-4">
+        {/* Object ID Column */}
+        <div className="animate-fade-in">
+          <h4 className="font-semibold text-sm text-gray-800 mb-2">Object</h4>
+          <div className="space-y-1 text-xs">
+            <div>
+              <span className="font-medium">ID:</span>{' '}
+              <CopyableText text={data.objectId} itemType="objectId" />
+            </div>
+            <div>
+              <span className="font-medium">Version:</span>{' '}
+              <CopyableText text={data.version} itemType="version" />
+            </div>
+            <div>
+              <span className="font-medium">Digest:</span>{' '}
+              <CopyableText text={data.digest} itemType="digest" />
+            </div>
+          </div>
+        </div>
+
+        {/* Type Column */}
+        <div className="animate-fade-in" style={{ animationDelay: '0.1s' }}>
+          <h4 className="font-semibold text-sm text-gray-800 mb-2">Type</h4>
+          <div className="text-xs break-all">
+            <CopyableText text={data.type} itemType="type" />
+          </div>
+        </div>
+
+        {/* Fields Column */}
+        <div className="animate-fade-in" style={{ animationDelay: '0.2s' }}>
+          <h4 className="font-semibold text-sm text-gray-800 mb-2">Fields</h4>
+          <ObjectFieldsDisplay fields={data.content?.fields} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function WalletDashboard() {
+  const [inputAccount, setInputAccount] = useState("");
+  const [queryCurrentAccount, setQueryCurrentAccount] = useState(false);
+  const [queryInputAccount, setQueryInputAccount] = useState(false);
+  const [currentAccountAllObjects, setCurrentAccountAllObjects] = useState<any[]>([]);
+  const [inputAccountAllObjects, setInputAccountAllObjects] = useState<any[]>([]);
+  const [currentAccountCursor, setCurrentAccountCursor] = useState<string | null>(null);
+  const [inputAccountCursor, setInputAccountCursor] = useState<string | null>(null);
+  const [loadingCurrentComplete, setLoadingCurrentComplete] = useState(false);
+  const [loadingInputComplete, setLoadingInputComplete] = useState(false);
+  const [currentAccountFinished, setCurrentAccountFinished] = useState(false);
+  const [inputAccountFinished, setInputAccountFinished] = useState(false);
+  
+  const currentAccount = useCurrentAccount();
+  
+  // Query for current account
+  const currentAccountData = useSuiClientQuery("getOwnedObjects", {
+    owner: currentAccount?.address || "",
+    cursor: currentAccountCursor,
+    options: {
+      showBcs: true,
+      showContent: true,
+      showDisplay: true,
+      showType: true,
+    },
+  }, {
+    enabled: queryCurrentAccount && !!currentAccount?.address,
+  });
+
+  // Query for input account
+  const inputAccountData = useSuiClientQuery("getOwnedObjects", {
+    owner: inputAccount,
+    cursor: inputAccountCursor,
+    options: {
+      showBcs: true,
+      showContent: true,
+      showDisplay: true,
+      showType: true,
+    },
+  }, {
+    enabled: queryInputAccount && !!inputAccount,
+  });
+
+  // Handle current account data updates and pagination
+  useEffect(() => {
+    if (currentAccountData?.data) {
+      if (currentAccountCursor === null) {
+        // First query - replace all data
+        setCurrentAccountAllObjects(currentAccountData.data.data || []);
+      } else {
+        // Subsequent query - append data
+        setCurrentAccountAllObjects(prev => [...prev, ...(currentAccountData.data.data || [])]);
+      }
+
+      // Check if there's more data to fetch
+      if (currentAccountData.data.hasNextPage && currentAccountData.data.nextCursor) {
+        setCurrentAccountCursor(currentAccountData.data.nextCursor);
+      } else {
+        // No more pages, mark as finished
+        setCurrentAccountFinished(true);
+        setLoadingCurrentComplete(false);
+      }
+    }
+  }, [currentAccountData?.data, currentAccountCursor]);
+
+  // Handle input account data updates and pagination
+  useEffect(() => {
+    if (inputAccountData?.data) {
+      if (inputAccountCursor === null) {
+        // First query - replace all data
+        setInputAccountAllObjects(inputAccountData.data.data || []);
+      } else {
+        // Subsequent query - append data
+        setInputAccountAllObjects(prev => [...prev, ...(inputAccountData.data.data || [])]);
+      }
+
+      // Check if there's more data to fetch
+      if (inputAccountData.data.hasNextPage && inputAccountData.data.nextCursor) {
+        setInputAccountCursor(inputAccountData.data.nextCursor);
+      } else {
+        // No more pages, mark as finished
+        setInputAccountFinished(true);
+        setLoadingInputComplete(false);
+      }
+    }
+  }, [inputAccountData?.data, inputAccountCursor]);
+
+  const handleQueryCurrentAccount = () => {
+    setQueryCurrentAccount(true);
+    setCurrentAccountCursor(null);
+    setCurrentAccountAllObjects([]);
+    setLoadingCurrentComplete(true);
+    setCurrentAccountFinished(false);
+  };
+
+  const handleQueryInputAccount = () => {
+    if (inputAccount.trim()) {
+      setQueryInputAccount(true);
+      setInputAccountCursor(null);
+      setInputAccountAllObjects([]);
+      setLoadingInputComplete(true);
+      setInputAccountFinished(false);
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto p-5">
+      {/* Current Account Card */}
+      <div className="border border-gray-200 rounded-lg p-5 my-4 bg-white shadow-sm">
+        <h3 className="mt-0 mb-4 text-lg font-semibold">Current Account Query</h3>
+        <p className="mb-4 text-gray-500">
+          Connected Account: {currentAccount?.address || "Not connected"}
+        </p>
+        <button 
+          className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white px-4 py-2 border-none rounded cursor-pointer mr-2 disabled:cursor-not-allowed"
+          onClick={handleQueryCurrentAccount}
+          disabled={!currentAccount?.address}
+        >
+          Query Current Account
+        </button>
+        {queryCurrentAccount && (
+          <div className="mt-4">
+            {loadingCurrentComplete ? (
+              <div className="text-blue-500 animate-fade-in">
+                <h4 className="text-base font-medium mb-2">Fetching all objects...</h4>
+                <div className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+                  <p className="text-sm">Currently loaded: {currentAccountAllObjects.length} objects</p>
+                </div>
+              </div>
+            ) : currentAccountFinished ? (
+              <div className="animate-fade-in">
+                <h4 className="text-base font-medium mb-4">
+                  Current Account Objects ({currentAccountAllObjects.length} total):
+                </h4>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {currentAccountAllObjects.map((obj, index) => (
+                    <div 
+                      key={`${obj.data.objectId}-${index}`}
+                      className="animate-slide-down"
+                      style={{ animationDelay: `${index * 50}ms` }}
+                    >
+                      <ObjectCard objectData={obj} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {/* Input Account Card */}
+      <div className="border border-gray-200 rounded-lg p-5 my-4 bg-white shadow-sm">
+        <h3 className="mt-0 mb-4 text-lg font-semibold">Query Another Account</h3>
+        <div className="mb-4">
+          <input
+            type="text"
+            placeholder="Enter account address (0x...)"
+            value={inputAccount}
+            onChange={(e) => setInputAccount(e.target.value)}
+            className="border border-gray-300 rounded px-3 py-2 mr-2 w-80 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <button 
+            className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white px-4 py-2 border-none rounded cursor-pointer disabled:cursor-not-allowed"
+            onClick={handleQueryInputAccount}
+            disabled={!inputAccount.trim()}
+          >
+            Query Account
+          </button>
+        </div>
+        {queryInputAccount && inputAccount && (
+          <div className="mt-4">
+            {loadingInputComplete ? (
+              <div className="text-blue-500 animate-fade-in">
+                <h4 className="text-base font-medium mb-2">Fetching all objects for: {inputAccount}</h4>
+                <div className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+                  <p className="text-sm">Currently loaded: {inputAccountAllObjects.length} objects</p>
+                </div>
+              </div>
+            ) : inputAccountFinished ? (
+              <div className="animate-fade-in">
+                <h4 className="text-base font-medium mb-4">
+                  Account Objects for: {inputAccount} ({inputAccountAllObjects.length} total)
+                </h4>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {inputAccountAllObjects.map((obj, index) => (
+                    <div 
+                      key={`${obj.data.objectId}-${index}`}
+                      className="animate-slide-down"
+                      style={{ animationDelay: `${index * 50}ms` }}
+                    >
+                      <ObjectCard objectData={obj} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
