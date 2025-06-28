@@ -1,12 +1,12 @@
 "use client";
 import {
+  useCurrentAccount,
   useSignAndExecuteTransaction,
   useSuiClient,
   useSuiClientQuery,
 } from "@mysten/dapp-kit";
 import { Transaction } from "@mysten/sui/transactions";
 import { useState } from "react";
-import { bcs } from '@mysten/sui/bcs';
 
 interface Parameter {
   id: number;
@@ -321,6 +321,7 @@ const MoveExecutor: React.FC = () => {
       }
     );
   };
+  const currentAccount = useCurrentAccount()?.address
   return (
     <div className="w-fit min-w-80">
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-12 backdrop-blur-sm bg-opacity-95">
@@ -515,7 +516,7 @@ const MoveExecutor: React.FC = () => {
           >
             + Add Parameter
           </button>
-
+          <p> Current account: {currentAccount}</p>
           {/* Execute Button */}
           <button
             type="submit"
