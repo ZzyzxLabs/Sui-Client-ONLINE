@@ -6,6 +6,7 @@ import {
 } from "@mysten/dapp-kit";
 import { Transaction } from "@mysten/sui/transactions";
 import { useState } from "react";
+import { bcs } from '@mysten/sui/bcs';
 
 interface Parameter {
   id: number;
@@ -265,7 +266,15 @@ const MoveExecutor: React.FC = () => {
         // Handle pure types (primitives)
         if (["u8", "u16", "u32", "u64", "u128", "u256", "U8", "U16", "U32", "U64", "U128", "U256"].includes(type)) {
           const lowerType = type.toLowerCase() as "u8" | "u16" | "u32" | "u64" | "u128" | "u256";
-          return T.pure[lowerType](Number(value));
+          switch (lowerType) {
+            case "u8": return T.pure.u8(Number(value));
+            case "u16": return T.pure.u16(Number(value));
+            case "u32": return T.pure.u32(Number(value));
+            case "u64": return T.pure.u64(BigInt(value));
+            case "u128": return T.pure.u128(BigInt(value));
+            case "u256": return T.pure.u256(BigInt(value));
+            default: return T.pure.u64(BigInt(value)); // Default fallback
+          }
         }
         
         if (type === "bool" || type === "Bool") {
